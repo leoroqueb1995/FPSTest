@@ -23,25 +23,19 @@ void ACHPickupHealth::BeginPlay()
 	
 }
 
-void ACHPickupHealth::OnPickup(ACHCharacterBase* Player)
+bool ACHPickupHealth::OnPickup(ACHCharacterBase* Player)
 {
 	Super::OnPickup(Player);
 
-	CHECK_POINTER(Player)
-	CHECK_POINTER(Player->GetStatsComponent())
+	CHECK_POINTER(Player, false)
+	CHECK_POINTER(Player->GetStatsComponent(), false)
 
 	if(!Player->GetStatsComponent()->IncreaseCurrentValue(TAG_STAT_HEALTH, 40.f))
 	{
-		return;
+		return false;
 	}
 	
-	SetCanBePicked(false);
-	// TODO: Change visuals
-	FTimerHandle CooldownTimerHandle;
-	GetWorld()->GetTimerManager().SetTimer(CooldownTimerHandle, [&]
-	{
-		SetCanBePicked(true);
-	}, GetCooldownTime(), false);
+	return true;
 }
 
 // Called every frame

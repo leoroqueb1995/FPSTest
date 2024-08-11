@@ -44,4 +44,10 @@ public:
 
 	UFUNCTION(BlueprintPure)
 	FCHWeaponData GetWeaponData() const { return WeaponData; }
+
+	UFUNCTION(BlueprintPure)
+	UAnimationAsset* GetHipReloadPlayerAnimation() const;
+
+	UFUNCTION(BlueprintPure)
+	UAnimationAsset* GetAimReloadPlayerAnimation() const;
 };

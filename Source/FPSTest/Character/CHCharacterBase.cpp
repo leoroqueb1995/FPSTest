@@ -7,16 +7,21 @@
 #include "FPSTest/Components/CHStatsComponent.h"
 #include "FPSTest/Misc/CHUtils.h"
 #include "EnhancedInput/Public/EnhancedInputComponent.h"
+#include "FPSTest/FPSTest.h"
+#include "FPSTest/Components/CHWeaponComponent.h"
+#include "FPSTest/DataAssets/CHDACharacterConfig.h"
 #include "FPSTest/Defines/CHGameplayTagDefines.h"
+#include "FPSTest/Misc/CHFunctionUtils.h"
+#include "FPSTest/PlayerController/CHPlayerController.h"
+#include "FPSTest/RespawnPoints/CHRespawnPoint.h"
 #include "FPSTest/Weapon/CHWeaponBase.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/SpringArmComponent.h"
+#include "Kismet/GameplayStatics.h"
 
 namespace CHCharacterBaseHelpers
 {
 	static const FName HandSocket = TEXT("hand_rSocket");
-	static constexpr float DefaultSpeed = 400.f;
-	static constexpr float SprintSpeed = 1200.f;
 }
 
 // Sets default values
@@ -30,19 +35,26 @@ ACHCharacterBase::ACHCharacterBase()
 
 	StatsComponent = CreateDefaultSubobject<UCHStatsComponent>(FName(TEXT("StatsComponent")));
 
-	GetCharacterMovement()->MaxWalkSpeed = CHCharacterBaseHelpers::DefaultSpeed;
+	CHECK_POINTER(CharacterConfig)
+	GetCharacterMovement()->MaxWalkSpeed = CharacterConfig->JogSpeed;
 }
 
 void ACHCharacterBase::InitStats()
 {
-	CHECK_POINTER(StatsComponent)
-	if (!StatsComponent->OnStatDepleted.IsBound())
+	OnCharacterDead.AddDynamic(this, &ThisClass::StartRespawnCooldown);
+	
+	CHECK_POINTER(GetStatsComponent())
+	if (!GetStatsComponent()->OnStatDepleted.IsBound())
 	{
-		StatsComponent->OnStatDepleted.AddDynamic(this, &ThisClass::OnStatDepleted);
+		GetStatsComponent()->OnStatDepleted.AddDynamic(this, &ThisClass::OnStatDepleted);
 	}
 	
-	StatsComponent->AddStat(FStatData(TAG_STAT_HEALTH, 100.f));
-	StatsComponent->AddStat(FStatData(TAG_STAT_STAMINA, 100.f));
+	CHECK_POINTER(CharacterConfig)
+	CHECK_EMPTY_ARRAY(CharacterConfig->PlayerStats)
+	for(const FStatData& Stat : CharacterConfig->PlayerStats)
+	{
+		GetStatsComponent()->AddStat(Stat);
+	}
 }
 
 void ACHCharacterBase::InitWeaponActor()
@@ -59,9 +71,35 @@ void ACHCharacterBase::InitWeaponActor()
 	
 	WeaponActor->AttachToComponent(GetMesh(), Rules, CHCharacterBaseHelpers::HandSocket);
 
-	ACHWeaponBase* Weapon = Cast<ACHWeaponBase>(WeaponActor->GetChildActor());
+	ACHWeaponBase* Weapon = GetPlayerWeapon();
 	CHECK_POINTER_WITH_TEXT_VOID(Weapon, TEXT("CAUTION: This will cause that damage applied by this weapon {%s} won't be correctly associated with this character {%s}"), *WeaponActor->GetName(), *GetName())
 	Weapon->SetWeaponOwner(this);
+
+	CHECK_POINTER(CharacterConfig)
+	AmmoInventory.Reset(); // Clear any previous value
+	TMap<FGameplayTag, int32> AmmoData = CharacterConfig->MaxAmmoAmountPerGun;
+	
+	if(AmmoData.IsEmpty())
+	{
+		return;
+	}
+
+	for (TTuple<FGameplayTag, int32> Info : AmmoData)
+	{
+		if(!Info.Key.IsValid())
+		{
+			continue;
+		}
+
+		FPlayerAmmoData NewAmmoData = FPlayerAmmoData(Info.Key, Info.Value);
+		
+		if(Weapon->GetWeaponTag().MatchesTag(Info.Key))
+		{
+			NewAmmoData.CurrentAmmo = Weapon->GetRemainingBullets();
+		}
+		
+		AmmoInventory.AddUnique(NewAmmoData);
+	}
 }
 
 // Called when the game starts or when spawned
@@ -71,13 +109,15 @@ void ACHCharacterBase::BeginPlay()
 
 	InitStats();
 	InitWeaponActor();
+	SetPlayerName();
 }
 
 void ACHCharacterBase::StartRun()
 {
 	CHECK_POINTER(GetCharacterMovement())
 	CHECK_POINTER(StatsComponent)
-
+	CHECK_POINTER(CharacterConfig)
+	
 	if (!StatsComponent->HasStat(TAG_STAT_STAMINA))
 	{
 		UE_LOG(LogTemp, Warning, TEXT("%s: %s has no stamina stat."), *FString(__FUNCTION__), *GetName());
@@ -88,8 +128,8 @@ void ACHCharacterBase::StartRun()
 	{
 		return;
 	}
-
-	GetCharacterMovement()->MaxWalkSpeed = CHCharacterBaseHelpers::SprintSpeed;
+	
+	GetCharacterMovement()->MaxWalkSpeed = CharacterConfig->SprintSpeed;
 	bIsSprinting = true;
 
 	// Force Camera to be on non-aiming distance
@@ -102,7 +142,9 @@ void ACHCharacterBase::StartRun()
 void ACHCharacterBase::StopRun()
 {
 	CHECK_POINTER(GetCharacterMovement())
-	GetCharacterMovement()->MaxWalkSpeed = CHCharacterBaseHelpers::DefaultSpeed;
+	CHECK_POINTER(CharacterConfig)
+	GetCharacterMovement()->MaxWalkSpeed = CharacterConfig->JogSpeed;
+	
 	bIsSprinting = false;
 
 	CHECK_POINTER(StatsComponent)
@@ -124,14 +166,16 @@ void ACHCharacterBase::StartAimAction()
 void ACHCharacterBase::StartAim()
 {
 	CHECK_POINTER(GetCameraBoom())
-	GetCameraBoom()->TargetArmLength = 50;
+	CHECK_POINTER(CharacterConfig)
+	GetCameraBoom()->TargetArmLength = CharacterConfig->ZoomCameraDistance;
 	//GetCameraBoom()->bUsePawnControlRotation = false;
 }
 
 void ACHCharacterBase::StopAim()
 {
 	CHECK_POINTER(GetCameraBoom())
-	GetCameraBoom()->TargetArmLength = 150;
+	CHECK_POINTER(CharacterConfig)
+	GetCameraBoom()->TargetArmLength = CharacterConfig->NormalCameraDistance;
 	//GetCameraBoom()->bUsePawnControlRotation = true;
 }
 
@@ -143,8 +187,13 @@ void ACHCharacterBase::StopAimAction()
 
 void ACHCharacterBase::StartShoot()
 {
+	if(GetIsSprinting()) // Can't shoot while sprinting
+	{
+		return;
+	}
+	
 	CHECK_POINTER(WeaponActor->GetChildActor())
-	ACHWeaponBase* Weapon = Cast<ACHWeaponBase>(WeaponActor->GetChildActor());
+	ACHWeaponBase* Weapon = GetPlayerWeapon();
 	CHECK_POINTER(Weapon)
 
 	Weapon->Shoot();
@@ -152,6 +201,127 @@ void ACHCharacterBase::StartShoot()
 
 void ACHCharacterBase::StopShoot()
 {
+}
+
+void ACHCharacterBase::ReloadGun()
+{
+	const ACHWeaponBase* Weapon = GetPlayerWeapon();
+	
+	CHECK_POINTER(Weapon)
+	CHECK_POINTER(Weapon->GetWeaponComponent())
+	CHECK_POINTER(GetWorld())
+
+	if(GetCurrentAmmo(Weapon->GetWeaponTag()) == 0)
+	{
+		// Maybe some anim?
+		return;
+	}
+
+	// Weapon is already reloaded
+	if(Weapon->GetRemainingBullets() == Weapon->GetWeaponComponent()->GetMaxBulletsOnWeapon())
+	{
+		return;
+	}
+	
+	bIsReloading = true;
+
+	UAnimationAsset* ReloadAnim;
+	if(GetIsAiming())
+	{
+		ReloadAnim = Weapon->GetWeaponComponent()->GetAimReloadPlayerAnimation();
+	}
+	else
+	{
+		ReloadAnim = Weapon->GetWeaponComponent()->GetHipReloadPlayerAnimation();
+	} 
+
+	CHECK_POINTER(ReloadAnim)
+	
+	OnCharacterReload.Broadcast(ReloadAnim);
+	
+	FTimerHandle ReloadTimerHandle;
+	FTimerDelegate ReloadDelegate;
+	ReloadDelegate.BindUObject(this, &ThisClass::ReloadGunDelegate);
+	
+	GetWorld()->GetTimerManager().SetTimer(ReloadTimerHandle, ReloadDelegate, ReloadAnim->GetPlayLength()-0.1f, false);
+}
+
+void ACHCharacterBase::ReloadGunDelegate()
+{
+	bIsReloading = false;
+	ACHWeaponBase* Weapon = GetPlayerWeapon();
+	
+	CHECK_POINTER(Weapon)
+	const int32 CurrentAmmo = GetCurrentAmmo(Weapon->GetWeaponTag());
+	
+	if(CurrentAmmo == INDEX_NONE)
+	{
+		return;
+	}
+	
+	Weapon->Reload(CurrentAmmo);
+}
+
+void ACHCharacterBase::AddAmmo(const FGameplayTag& AmmoType, int32 Amount)
+{
+	CHECK_VALID_TAG(AmmoType)
+	CHECK_POINTER(CharacterConfig)
+	
+	for (FPlayerAmmoData& Data : AmmoInventory)
+	{
+		if(!Data.IsEqual(AmmoType))
+		{
+			continue;
+		}
+		
+		Data.CurrentAmmo = FMath::Clamp(Data.CurrentAmmo + Amount, 0, Data.MaxAmmo);
+		return;
+	}
+}
+
+void ACHCharacterBase::RemoveAmmo(const FGameplayTag& AmmoType, int32 Amount)
+{
+	CHECK_VALID_TAG(AmmoType)
+	CHECK_POINTER(CharacterConfig)
+	
+	for (FPlayerAmmoData& Data : AmmoInventory)
+	{
+		if(!Data.IsEqual(AmmoType))
+		{
+			continue;
+		}
+		
+		Data.CurrentAmmo = FMath::Clamp(Data.CurrentAmmo - Amount, 0, Data.MaxAmmo);
+		return;
+	}
+}
+
+int32 ACHCharacterBase::GetCurrentAmmo(const FGameplayTag& AmmoType)
+{
+	for (FPlayerAmmoData& Data : AmmoInventory)
+	{
+		if(!Data.IsEqual(AmmoType))
+		{
+			continue;
+		}
+		
+		return Data.CurrentAmmo;
+	}
+
+	return INDEX_NONE;
+}
+
+void ACHCharacterBase::FillAmmoInventory()
+{
+	CHECK_EMPTY_ARRAY(AmmoInventory)
+	for (FPlayerAmmoData& Data : AmmoInventory)
+	{
+		Data.CurrentAmmo = Data.MaxAmmo;
+	}
+
+	CHECK_POINTER(GetPlayerWeapon())
+	// Reload all weapons without consuming ammo
+	GetPlayerWeapon()->Reload(100, false);
 }
 
 void ACHCharacterBase::OnStatDepleted(const FGameplayTag& StatDepleted)
@@ -173,6 +343,15 @@ void ACHCharacterBase::Dead()
 	CHECK_POINTER(GetMesh())
 	SetIsDead(true);
 
+	StopRun();
+	StopAimAction();
+	
+	OnCharacterDead.Broadcast();
+	
+	const ACHPlayerController* PC = UCHFunctionUtils::GetCHPlayerController(this);
+	CHECK_POINTER(PC)
+	PC->ReplaceMappingContext(ECHGameState::DEAD, CharacterConfig);
+	
 	GetMesh()->SetSimulatePhysics(true);
 	GetMesh()->SetCollisionProfileName(TEXT("Ragdoll"));
 
@@ -186,6 +365,48 @@ void ACHCharacterBase::Dead()
 
 	CHECK_POINTER(GetCapsuleComponent())
 	GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+}
+
+void ACHCharacterBase::StartRespawnCooldown()
+{
+	CHECK_POINTER(GetWorld())
+	CHECK_POINTER(CharacterConfig)
+	
+	FTimerHandle RespawnTimerHandle;
+	GetWorld()->GetTimerManager().SetTimer(RespawnTimerHandle, [&]
+	{
+		SetCanRespawn(true);
+	}, CharacterConfig->RespawnCooldownTime, false);
+}
+
+void ACHCharacterBase::Respawn()
+{
+	if(!PlayerCanRespawn())
+	{
+		return;
+	}
+	
+	const ACHPlayerController* PC = UCHFunctionUtils::GetCHPlayerController(this);
+	CHECK_POINTER(PC)
+	PC->ReplaceMappingContext(ECHGameState::PLAY, CharacterConfig);
+	
+	CHECK_POINTER(GetMesh())
+	GetMesh()->SetAllBodiesSimulatePhysics(false);
+
+	CHECK_POINTER(GetCapsuleComponent())
+	GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+	GetCharacterMovement()->SetMovementMode(MOVE_Walking);
+
+	GetMesh()->SetRelativeLocation(FVector(0,0,-90));
+	GetMesh()->SetRelativeRotation(FRotator(0,-90,0));
+
+	CHECK_POINTER(GetStatsComponent())
+	GetStatsComponent()->ResetStats();
+
+	const FTransform RandomSpawnPoint = GetRandomSpawnPoint();
+	SetActorLocationAndRotation(RandomSpawnPoint.GetLocation(), RandomSpawnPoint.GetRotation());
+
+	SetCanRespawn(false);
 }
 
 // Called every frame
@@ -209,11 +430,33 @@ void ACHCharacterBase::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 
 		EnhancedInputComponent->BindAction(IA_Shoot, ETriggerEvent::Started, this, &ThisClass::StartShoot);
 		EnhancedInputComponent->BindAction(IA_Shoot, ETriggerEvent::Completed, this, &ThisClass::StopShoot);
+
+		EnhancedInputComponent->BindAction(IA_Respawn, ETriggerEvent::Triggered, this, &ThisClass::Respawn);
+
+		EnhancedInputComponent->BindAction(IA_Reload, ETriggerEvent::Triggered, this, &ThisClass::ReloadGun);
 	}
 }
 
 void ACHCharacterBase::SetPlayerName()
 {
+	CHECK_POINTER(CharacterConfig)
+	
+	PlayerName = CharacterConfig->GetRandomName();
+}
+
+FTransform ACHCharacterBase::GetRandomSpawnPoint() const
+{
+	CHECK_POINTER(GetWorld(), FTransform())
+	
+	TArray<AActor*> RespawnPoints;
+	UGameplayStatics::GetAllActorsOfClass(GetWorld(), ACHRespawnPoint::StaticClass(), RespawnPoints);
+	CHECK_EMPTY_ARRAY(RespawnPoints, FTransform())
+	
+	const int32 RandomIndex = FMath::RandRange(0, RespawnPoints.Num()-1);
+	const ACHRespawnPoint* RandomSpawn = Cast<ACHRespawnPoint>(RespawnPoints[RandomIndex]);
+	CHECK_POINTER(RandomSpawn, FTransform())
+	
+	return RandomSpawn->GetSpawnReference();
 }
 
 void ACHCharacterBase::OnDamageTaken_Implementation(AActor* DamageInstigator, float DamageReceived)
@@ -267,4 +510,9 @@ void ACHCharacterBase::AddSinglePoint()
 		UE_LOG(LogTemp, Error, TEXT("%s WIN"), *GetName());
 		// TODO: WIN
 	}
+}
+
+ACHWeaponBase* ACHCharacterBase::GetPlayerWeapon() const
+{
+	return Cast<ACHWeaponBase>(WeaponActor->GetChildActor());
 }

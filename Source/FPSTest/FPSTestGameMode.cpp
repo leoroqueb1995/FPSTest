@@ -2,6 +2,7 @@
 
 #include "FPSTestGameMode.h"
 #include "FPSTestCharacter.h"
+#include "PlayerController/CHPlayerController.h"
 #include "UObject/ConstructorHelpers.h"
 
 AFPSTestGameMode::AFPSTestGameMode()
@@ -12,4 +13,6 @@ AFPSTestGameMode::AFPSTestGameMode()
 	{
 		DefaultPawnClass = PlayerPawnBPClass.Class;
 	}
+
+	PlayerControllerClass = ACHPlayerController::StaticClass();
 }

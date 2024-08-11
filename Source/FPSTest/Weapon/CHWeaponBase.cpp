@@ -37,6 +37,8 @@ void ACHWeaponBase::InitWeaponData()
 {
 	CHECK_POINTER(WeaponComponent)
 	CHECK_VALID_TAG(WeaponTag)
+
+
 	WeaponComponent->SetWeapon(WeaponTag);
 
 	CHECK_POINTER(WeaponComponent->GetWeaponSK())
@@ -61,14 +63,14 @@ void ACHWeaponBase::ApplyDamageToActor_Implementation(AActor* TargetActor)
 	ACHCharacterBase* CastedActor = Cast<ACHCharacterBase>(TargetActor);
 	CHECK_POINTER(CastedActor)
 	CHECK_POINTER(CastedActor->GetStatsComponent())
-	
-	if(!CastedActor->GetStatsComponent()->HasStat(TAG_STAT_HEALTH))
+
+	if (!CastedActor->GetStatsComponent()->HasStat(TAG_STAT_HEALTH))
 	{
 		return;
 	}
 
 	const float BulletDamage = WeaponComponent->GetWeaponData().BulletDamage;
-	if( BulletDamage == static_cast<float>(INDEX_NONE))
+	if (BulletDamage == static_cast<float>(INDEX_NONE))
 	{
 		return;
 	}
@@ -78,14 +80,14 @@ void ACHWeaponBase::ApplyDamageToActor_Implementation(AActor* TargetActor)
 
 void ACHWeaponBase::Shoot()
 {
-	if(GetRemainingBullets() <= 0)
+	if (GetRemainingBullets() <= 0)
 	{
 		// TODO: No bullets sound
 		return;
 	}
-	
+
 	SpawnShootVFX();
-	RaycastBullet();
+	ShootBullet();
 }
 
 void ACHWeaponBase::SpawnShootVFX()
@@ -98,7 +100,7 @@ void ACHWeaponBase::SpawnShootVFX()
 
 	UParticleSystem* VFX = WeaponComponent->GetWeaponData().ShootVFX;
 	//UParticleSystem* TracerVFX = WeaponComponent->GetWeaponData().TracerVFX;
-	
+
 	const FVector Location = WeaponSK->GetSocketLocation(CHWeaponHelpers::BulletSocket);
 	//const FRotator TracerRotation = WeaponSK->GetSocketRotation(CHWeaponHelpers::BulletSocket);
 	//const FVector TracerLocation = Location + (TracerRotation.Vector() * 100.f);
@@ -107,7 +109,7 @@ void ACHWeaponBase::SpawnShootVFX()
 	//UGameplayStatics::SpawnEmitterAtLocation(GetWorld(), TracerVFX, TracerLocation, TracerRotation, true, EPSCPoolMethod::AutoRelease);
 }
 
-void ACHWeaponBase::RaycastBullet()
+void ACHWeaponBase::ShootBullet()
 {
 	FVector SocketLocation = WeaponSK->GetSocketLocation(CHWeaponHelpers::BulletSocket);
 	FRotator SocketRotation = WeaponSK->GetSocketRotation(CHWeaponHelpers::BulletSocket);
@@ -137,25 +139,61 @@ void ACHWeaponBase::RaycastBullet()
 		Params
 	);
 
+	// One bullet was shot
+	TakeBulletFromMagazine();
+
 	// TODO: Change this to hit any surface
 	if (bHit)
 	{
 		CHECK_POINTER(HitResult.GetActor())
 		ACHCharacterBase* Player = Cast<ACHCharacterBase>(HitResult.GetActor()); //UGameplayStatics::GetPlayerCharacter(this,0));
-		
-		if(!Player)
+
+		if (!Player)
 		{
 			return;
 		}
 		Execute_ApplyDamageToActor(this, Player);
-		
+
 		CHECK_POINTER(WeaponComponent)
 		CHECK_POINTER(WeaponComponent->GetWeaponData().HitVFX)
 
 		UParticleSystem* VFX = WeaponComponent->GetWeaponData().HitVFX;
 		UGameplayStatics::SpawnEmitterAtLocation(GetWorld(), VFX, HitResult.ImpactPoint, FRotator::ZeroRotator, true, EPSCPoolMethod::AutoRelease);
 	}
+}
 
-	// One bullet was shot
-	BulletsLeft--;
+void ACHWeaponBase::TakeBulletFromMagazine(int32 NumberOfBullets)
+{
+	BulletsLeft -= NumberOfBullets;
+
+	if (BulletsLeft < 0)
+	{
+		BulletsLeft = 0;
+	}
+}
+
+bool ACHWeaponBase::Reload(int32 AmmoQuantity, bool bConsumeAmmo)
+{
+	CHECK_POINTER(WeaponComponent, false)
+	const int32 AmmoNeeded = WeaponComponent->GetMaxBulletsOnWeapon() - BulletsLeft;
+	const int32 Remain = AmmoQuantity - AmmoNeeded;
+
+	if (Remain < 0)
+	{
+		BulletsLeft += AmmoQuantity;
+		if (bConsumeAmmo)
+		{
+			WeaponOwner->RemoveAmmo(WeaponTag, AmmoQuantity);
+		}
+	}
+	else
+	{
+		BulletsLeft += AmmoNeeded;
+		if (bConsumeAmmo)
+		{
+			WeaponOwner->RemoveAmmo(WeaponTag, AmmoNeeded);
+		}
+	}
+
+	return true;
 }

@@ -111,7 +111,7 @@ bool UCHStatsComponent::IncreaseCurrentValue(const FGameplayTag& Stat, const flo
 	CHECK_VALID_TAG(Stat, false)
 
 	const float CurrentValue = GetCurrentValue(Stat);
-	if(CurrentValue == INDEX_NONE || CurrentValue >= GetBaseValue(Stat))
+	if(CurrentValue == static_cast<float>(INDEX_NONE) || CurrentValue >= GetBaseValue(Stat))
 	{
 		return false;
 	}

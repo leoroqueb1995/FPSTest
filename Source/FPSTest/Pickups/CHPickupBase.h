@@ -3,6 +3,8 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "FPSTest/Character/CHCharacterBase.h"
+#include "FPSTest/Misc/CHUtils.h"
 #include "GameFramework/Actor.h"
 #include "CHPickupBase.generated.h"
 
@@ -21,7 +23,7 @@ class FPSTEST_API ACHPickupBase : public AActor
 	USphereComponent* InteractionArea = nullptr;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Game|Visuals", meta=(AllowPrivateAccess="true"))
-	float UpAndDownSpeed = 150.f;
+	float UpAndDownSpeed = 2.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Game|Visuals", meta=(AllowPrivateAccess="true"))
 	float UpAndDownDistance = 50.f;
@@ -44,16 +46,18 @@ protected:
 	// Called when the game starts or when spawned
 	virtual void BeginPlay() override;
 
-	virtual void OnPickup(ACHCharacterBase* Player){}
-	
+	virtual bool OnPickup(ACHCharacterBase* Player) { return false; }
+
 	UFUNCTION()
 	void OnSphereBeginOverlap(UPrimitiveComponent* OverlappedComp, AActor* OtherActor, UPrimitiveComponent* OtherComp,
-	                                  int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult);
+	                          int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult);
 
 	UStaticMeshComponent* GetPickupMesh() const { return PickupMesh; }
 	float GetCooldownTime() const { return CooldownTime; }
 	bool GetCanBePicked() const { return bCanBePicked; }
 	void SetCanBePicked(const bool bNewValue) { bCanBePicked = bNewValue; }
+
+	void CooldownPickup();
 
 public:
 	// Called every frame

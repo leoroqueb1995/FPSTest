@@ -3,6 +3,9 @@
 
 #include "CHPickupAmmo.h"
 
+#include "FPSTest/Character/CHCharacterBase.h"
+#include "FPSTest/Misc/CHUtils.h"
+
 
 // Sets default values
 ACHPickupAmmo::ACHPickupAmmo()
@@ -16,6 +19,15 @@ void ACHPickupAmmo::BeginPlay()
 {
 	Super::BeginPlay();
 	
+}
+
+bool ACHPickupAmmo::OnPickup(ACHCharacterBase* Player)
+{
+	Super::OnPickup(Player);
+
+	CHECK_POINTER(Player, false)
+	Player->FillAmmoInventory();
+	return true;
 }
 
 // Called every frame

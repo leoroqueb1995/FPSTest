@@ -49,7 +49,7 @@ bool UCHWeaponComponent::GetWeaponDataFromDT(const FGameplayTag& Tag, FCHWeaponD
 bool UCHWeaponComponent::ChangeWeaponData(const FGameplayTag& NewWeaponTag)
 {
 	CHECK_VALID_TAG(NewWeaponTag, false)
-	
+
 	WeaponTag = NewWeaponTag;
 	return GetWeaponDataFromDT(WeaponTag, WeaponData);
 }
@@ -72,17 +72,17 @@ void UCHWeaponComponent::SetWeapon(const FGameplayTag& NewWeaponTag)
 int32 UCHWeaponComponent::GetMaxBulletsOnWeapon(int32 MaxAttempts)
 {
 	// Try to retrieve WeaponData from DT
-	if(!WeaponData.IsValid())
+	if (!WeaponData.IsValid())
 	{
 		CHECK_VALID_TAG(WeaponTag, INDEX_NONE)
 		GetWeaponDataFromDT(WeaponTag, WeaponData);
-		
-		if(MaxAttempts == 0)
+
+		if (MaxAttempts == 0)
 		{
 			return INDEX_NONE;
 		}
 
-		GetMaxBulletsOnWeapon(MaxAttempts-1);
+		GetMaxBulletsOnWeapon(MaxAttempts - 1);
 	}
 
 	return WeaponData.BulletsPerMagazine;
@@ -90,10 +90,30 @@ int32 UCHWeaponComponent::GetMaxBulletsOnWeapon(int32 MaxAttempts)
 
 USkeletalMesh* UCHWeaponComponent::GetWeaponSK()
 {
-	if(!WeaponData.IsValid())
+	if (!WeaponData.IsValid())
 	{
 		return nullptr;
 	}
 
 	return WeaponData.WeaponMesh;
+}
+
+UAnimationAsset* UCHWeaponComponent::GetHipReloadPlayerAnimation() const
+{
+	if (!WeaponData.IsValid())
+	{
+		return nullptr;
+	}
+	
+	return WeaponData.HipReloadAnimation;
+}
+
+UAnimationAsset* UCHWeaponComponent::GetAimReloadPlayerAnimation() const
+{
+	if (!WeaponData.IsValid())
+	{
+		return nullptr;
+	}
+	
+	return WeaponData.AimReloadAnimation;
 }

@@ -18,3 +18,11 @@ enum class EReloadType : uint8
 	SINGLE		UMETA(DisplayName = "SingleBullet"),
 	MAGAZINE	UMETA(DisplayName = "CompleteMagazine")
 };
+
+UENUM(BlueprintType)
+enum class ECHGameState : uint8
+{
+	PLAY		UMETA(DisplayName = "Play"),
+	DEAD		UMETA(DisplayName = "Dead"),
+	MENU		UMETA(DisplayName = "Menu")
+};

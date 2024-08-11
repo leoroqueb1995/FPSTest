@@ -34,14 +34,28 @@ void ACHPickupBase::BeginPlay()
 }
 
 void ACHPickupBase::OnSphereBeginOverlap(UPrimitiveComponent* OverlappedComp, AActor* OtherActor, UPrimitiveComponent* OtherComp,
-	int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
+                                         int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
 {
 	CHECK_POINTER(OtherActor)
 
 	ACHCharacterBase* Player = Cast<ACHCharacterBase>(OtherActor);
 	CHECK_POINTER(Player)
 
-	OnPickup(Player);
+	if(OnPickup(Player))
+	{
+		CooldownPickup();
+	}
+}
+
+void ACHPickupBase::CooldownPickup()
+{
+	SetCanBePicked(false);
+	// TODO: Change visuals
+	FTimerHandle CooldownTimerHandle;
+	GetWorld()->GetTimerManager().SetTimer(CooldownTimerHandle, [&]
+	{
+		SetCanBePicked(true);
+	}, GetCooldownTime(), false);
 }
 
 // Called every frame

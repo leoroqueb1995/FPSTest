@@ -42,17 +42,18 @@ protected:
 
 	UFUNCTION(BlueprintCallable)
 	void InitWeaponData();
-	
+
 	void SpawnShootVFX();
-	void RaycastBullet();
-	
+	void ShootBullet();
+	void TakeBulletFromMagazine(int32 NumberOfBullets = 1);
+
 public:
 	// Called every frame
 	virtual void Tick(float DeltaTime) override;
 
 	UFUNCTION(BlueprintPure)
 	UCHWeaponComponent* GetWeaponComponent() const { return WeaponComponent; }
-	
+
 	virtual void ApplyDamageToActor_Implementation(AActor* TargetActor) override;
 
 	UFUNCTION(BlueprintPure)
@@ -60,5 +61,11 @@ public:
 
 	void Shoot();
 
+	// Will return ammo exceed if any
+	bool Reload(int32 AmmoQuantity, bool bConsumeAmmo = true);
+
 	void SetWeaponOwner(ACHCharacterBase* NewOwner) { WeaponOwner = NewOwner; }
+
+	UFUNCTION(BlueprintPure)
+	const FGameplayTag& GetWeaponTag() const { return WeaponTag; }
 };

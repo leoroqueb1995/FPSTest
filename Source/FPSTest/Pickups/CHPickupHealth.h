@@ -19,7 +19,7 @@ protected:
 	// Called when the game starts or when spawned
 	virtual void BeginPlay() override;
 
-	virtual void OnPickup(ACHCharacterBase* Player) override;
+	virtual bool OnPickup(ACHCharacterBase* Player) override;
 
 public:
 	// Called every frame

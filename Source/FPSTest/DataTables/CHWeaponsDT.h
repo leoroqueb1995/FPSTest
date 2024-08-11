@@ -25,21 +25,24 @@ struct FCHWeaponData : public FTableRowBase
 	// This will determine if weapon is reloaded one bullet each time or a complete magazine
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="WeaponData")
 	EReloadType ReloadType = EReloadType::MAGAZINE;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Animations")
+	UAnimationAsset* HipReloadAnimation = nullptr;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Animations")
+	UAnimationAsset* AimReloadAnimation = nullptr;
 	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="VFX")
 	UParticleSystem* ShootVFX = nullptr;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="VFX")
 	UParticleSystem* TracerVFX = nullptr;
-
+	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="VFX")
 	UParticleSystem* HitVFX = nullptr;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Game|Shoot")
 	int32 BulletsPerMagazine = 1;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Game|Shoot")
-	int32 PlayerMaxAmount = 1;
 
 	// Maximum bullets that will be shot at once (useful for shotguns)
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Game|Shoot")
