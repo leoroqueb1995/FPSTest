@@ -20,3 +20,11 @@ void ACHPlayerController::ReplaceMappingContext(ECHGameState NewState, UCHDAChar
 		Subsystem->AddMappingContext(*MappingContext, 0);
 	}
 }
+
+void ACHPlayerController::ClearMappings() const
+{
+	if(UEnhancedInputLocalPlayerSubsystem* Subsystem = ULocalPlayer::GetSubsystem<UEnhancedInputLocalPlayerSubsystem>(GetLocalPlayer()))
+	{
+		Subsystem->ClearAllMappings();
+	}
+}

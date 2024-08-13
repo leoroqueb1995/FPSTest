@@ -18,4 +18,6 @@ class FPSTEST_API ACHPlayerController : public APlayerController
 
 public:
 	void ReplaceMappingContext(ECHGameState NewState, UCHDACharacterConfig* CharacterDA) const;
+
+	void ClearMappings() const;
 };

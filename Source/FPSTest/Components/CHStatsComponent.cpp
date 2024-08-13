@@ -218,9 +218,9 @@ bool UCHStatsComponent::ConsumeStamina()
 	{
 		GetWorld()->GetTimerManager().SetTimer(ConsumeStaminaTimerHandle, [&]
 		{
-			const float DecreasedStamina = GetCurrentValue(TAG_STAT_STAMINA) - 10.f;
+			const float DecreasedStamina = GetCurrentValue(TAG_STAT_STAMINA) - 2.f;
 			SetCurrentValue(TAG_STAT_STAMINA, DecreasedStamina);
-		}, .8f, true);
+		}, .1f, true);
 	}
 
 	return true;
@@ -248,7 +248,11 @@ void UCHStatsComponent::RegenerateStamina()
 
 	GetWorld()->GetTimerManager().SetTimer(RegenerateStaminaTimerHandle, [&]
 	{
-		const float RecoveredStamina = GetCurrentValue(TAG_STAT_STAMINA) + 10.f;
+		const float RecoveredStamina = GetCurrentValue(TAG_STAT_STAMINA) + 7.f;
 		SetCurrentValue(TAG_STAT_STAMINA, RecoveredStamina);
-	}, .8f, true, 2.f);
+		if(RecoveredStamina >= GetBaseValue(TAG_STAT_STAMINA))
+		{
+			GetWorld()->GetTimerManager().ClearTimer(RegenerateStaminaTimerHandle);
+		}
+	}, .1f, true, 1.f);
 }

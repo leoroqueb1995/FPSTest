@@ -49,7 +49,7 @@ bool UCHWeaponComponent::GetWeaponDataFromDT(const FGameplayTag& Tag, FCHWeaponD
 bool UCHWeaponComponent::ChangeWeaponData(const FGameplayTag& NewWeaponTag)
 {
 	CHECK_VALID_TAG(NewWeaponTag, false)
-
+	
 	WeaponTag = NewWeaponTag;
 	return GetWeaponDataFromDT(WeaponTag, WeaponData);
 }
@@ -88,6 +88,39 @@ int32 UCHWeaponComponent::GetMaxBulletsOnWeapon(int32 MaxAttempts)
 	return WeaponData.BulletsPerMagazine;
 }
 
+int32 UCHWeaponComponent::GetMaxAmmoOnWeapon(const FGameplayTag& Weapon) const
+{
+	CHECK_POINTER(WeaponsDT, false)
+	
+	TArray<FCHWeaponData*> Rows;
+	WeaponsDT->GetAllRows<FCHWeaponData>(TEXT(""), Rows);
+	
+	CHECK_EMPTY_ARRAY(Rows, false);
+	for (const FCHWeaponData* Row : Rows)
+	{
+		if (!Row->IsValid())
+		{
+			continue;
+		}
+
+		if (Row->WeaponTag.MatchesTag(Weapon))
+		{
+			return Row->BulletsPerMagazine;
+		}
+	}
+	
+	return INDEX_NONE;
+}
+
+int32 UCHWeaponComponent::GetAmmoSpentOnShot()
+{
+	if(!GetWeaponData().IsValid())
+	{
+		return INDEX_NONE;
+	}
+	return GetWeaponData().MaxBulletsPerShot;
+}
+
 USkeletalMesh* UCHWeaponComponent::GetWeaponSK()
 {
 	if (!WeaponData.IsValid())
@@ -98,22 +131,15 @@ USkeletalMesh* UCHWeaponComponent::GetWeaponSK()
 	return WeaponData.WeaponMesh;
 }
 
-UAnimationAsset* UCHWeaponComponent::GetHipReloadPlayerAnimation() const
+UAnimMontage* UCHWeaponComponent::GetReloadAnimation(bool bReloadFromHip) const
 {
 	if (!WeaponData.IsValid())
 	{
 		return nullptr;
 	}
 	
-	return WeaponData.HipReloadAnimation;
-}
-
-UAnimationAsset* UCHWeaponComponent::GetAimReloadPlayerAnimation() const
-{
-	if (!WeaponData.IsValid())
-	{
-		return nullptr;
-	}
+	UAnimMontage* ReloadAnim;
+	bReloadFromHip ? ReloadAnim = WeaponData.HipReloadAnimation : ReloadAnim = WeaponData.AimReloadAnimation;
 	
-	return WeaponData.AimReloadAnimation;
+	return ReloadAnim;
 }

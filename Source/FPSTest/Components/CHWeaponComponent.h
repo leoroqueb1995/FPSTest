@@ -40,14 +40,17 @@ public:
 	int32 GetMaxBulletsOnWeapon(int32 MaxAttempts = 10);
 
 	UFUNCTION(BlueprintPure)
+	int32 GetMaxAmmoOnWeapon(const FGameplayTag& Weapon) const;
+
+	UFUNCTION(BlueprintPure)
+	int32 GetAmmoSpentOnShot();
+
+	UFUNCTION(BlueprintPure)
 	USkeletalMesh* GetWeaponSK();
 
 	UFUNCTION(BlueprintPure)
 	FCHWeaponData GetWeaponData() const { return WeaponData; }
 
 	UFUNCTION(BlueprintPure)
-	UAnimationAsset* GetHipReloadPlayerAnimation() const;
-
-	UFUNCTION(BlueprintPure)
-	UAnimationAsset* GetAimReloadPlayerAnimation() const;
+	UAnimMontage* GetReloadAnimation(bool bReloadFromHip) const;
 };

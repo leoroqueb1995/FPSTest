@@ -26,3 +26,8 @@ int32 UCHDACharacterConfig::GetMaxAmmoAmount(const FGameplayTag& WeaponTag)
 
 	return *AmmoAmount;
 }
+
+UAnimMontage* UCHDACharacterConfig::GetEquipMontage(const ECHWeaponSelected Weapon)
+{
+	return *EquipWeaponAnimations.Find(Weapon);
+}

@@ -8,6 +8,9 @@
 #include "FPSTest/Interfaces/CHDamageInterface.h"
 #include "CHCharacterBase.generated.h"
 
+class UCHSprintCameraShake;
+class UCHHUDWidget;
+enum class ECHWeaponSelected : uint8;
 class UCHDACharacterConfig;
 struct FGameplayTag;
 class ACHWeaponBase;
@@ -25,13 +28,17 @@ struct FPlayerAmmoData
 	int32 MaxAmmo = 0;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
-	int32 CurrentAmmo = 0;
+	int32 PlayerCurrentAmmo = 0;
+
+	// This will storage actual ammo inside weapons
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	int32 WeaponRemainingAmmo = 0;
 
 	FPlayerAmmoData()
 	{
 	}
 
-	FPlayerAmmoData(const FGameplayTag& Tag, const int32 MaxAmmo) : AmmoTag(Tag), MaxAmmo(MaxAmmo)
+	FPlayerAmmoData(const FGameplayTag& Tag, const int32 MaxAmmo) : AmmoTag(Tag), MaxAmmo(MaxAmmo), PlayerCurrentAmmo(MaxAmmo)
 	{
 	}
 
@@ -49,9 +56,6 @@ struct FPlayerAmmoData
 
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FCharacterDead);
-
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FCharacterReload, UAnimationAsset*, ReloadAnim);
-
 UCLASS()
 class FPSTEST_API ACHCharacterBase : public AFPSTestCharacter, public ICHDamageInterface
 {
@@ -70,7 +74,19 @@ class FPSTEST_API ACHCharacterBase : public AFPSTestCharacter, public ICHDamageI
 	UInputAction* IA_Aim = nullptr;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=InputActions, meta=(AllowPrivateAccess="true"))
+	UInputAction* IA_TableScore= nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=InputActions, meta=(AllowPrivateAccess="true"))
 	UInputAction* IA_Respawn = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=InputActions, meta=(AllowPrivateAccess="true"))
+	UInputAction* IA_Weapon1 = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=InputActions, meta=(AllowPrivateAccess="true"))
+	UInputAction* IA_Weapon2 = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category=InputActions, meta=(AllowPrivateAccess="true"))
+	UInputAction* IA_Weapon3 = nullptr;
 	/// ----------- END INPUT ACTIONS ------------ ///
 
 	/// ----------- COMPONENTS, DATA & ACTORS --------------- ///
@@ -96,10 +112,21 @@ class FPSTEST_API ACHCharacterBase : public AFPSTestCharacter, public ICHDamageI
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Game|Player", meta=(AllowPrivateAccess="true"))
 	TArray<FPlayerAmmoData> AmmoInventory;
-
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Game|Player|Camera", meta=(AllowPrivateAccess="true"))
+	TSubclassOf<UCHSprintCameraShake> SprintCameraShakeClass = nullptr;
+	
 	bool bIsDead = false;
 	bool bCanRespawn = false;
+	bool bCanShoot = true;
 	/// ----------- END GAMEPLAY VARIABLES -------------- ///
+
+	/// ----------- UI ------------ ///
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="UI", meta=(AllowPrivateAccess="true"))
+	UCHHUDWidget* HUD = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="UI", meta=(AllowPrivateAccess="true"))
+	TSubclassOf<UCHHUDWidget> HUDClass = nullptr;
 
 	/// --------- ANIM VARIABLES ---------- ///
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Animation", meta=(AllowPrivateAccess="true"))
@@ -111,7 +138,11 @@ class FPSTEST_API ACHCharacterBase : public AFPSTestCharacter, public ICHDamageI
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Animation", meta=(AllowPrivateAccess="true"))
 	bool bIsReloading = false;
 	/// --------- END ANIM VARIABLES ---------- ///
+	
+	FTimerHandle ShootTimerHandle;
+	FTimerHandle ShootCooldown;
 
+	bool bCameraIsShaking = false;
 public:
 	// Sets default values for this character's properties
 	ACHCharacterBase();
@@ -119,19 +150,27 @@ public:
 	/// -------- DELEGATES ---------- ///
 	UPROPERTY(BlueprintAssignable, BlueprintCallable)
 	FCharacterDead OnCharacterDead;
-
+	
 	UPROPERTY(BlueprintAssignable, BlueprintCallable)
-	FCharacterReload OnCharacterReload;
+	FCharacterDead OnCharacterRespawn;
 
 private:
 	void InitStats();
 	void InitWeaponActor();
+	
+	void ConfigureCamera();
+
+	void CreateHUD();
+	
+	UFUNCTION()
+	void OnMontageNotifyReceived(FName NotifyName, const FBranchingPointNotifyPayload& BranchingPointNotifyPayload);
 
 protected:
 	// Called when the game starts or when spawned
 	virtual void BeginPlay() override;
 
 	void StartRun();
+	void ShakeCamera();
 	void StopRun();
 
 	void StartAimAction();
@@ -143,11 +182,21 @@ protected:
 	void StopShoot();
 
 	void ReloadGun();
-	void ReloadGunDelegate();
+	void OnReloadNotify();
+
+	void ChangeToWeaponOne();
+	void ChangeToWeaponTwo();
+	void ChangeToWeaponThree();
+	
+	void OnEquipWeaponNotify();
+
+	UFUNCTION(BlueprintNativeEvent)
+	void ChangeWeaponActorClass(const ECHWeaponSelected NewWeaponClass);
 
 	UFUNCTION()
 	void OnStatDepleted(const FGameplayTag& StatDepleted);
 
+	void PlayRandomHitMontage();
 	void Dead();
 	UFUNCTION()
 	void StartRespawnCooldown();
@@ -159,14 +208,23 @@ protected:
 	UFUNCTION(BlueprintCallable)
 	void SetCanRespawn(const bool bPlayerCanRespawn) { bCanRespawn = bPlayerCanRespawn; }
 
+	UFUNCTION(BlueprintPure)
+	FTransform GetRandomSpawnPoint() const;
+
 	virtual void OnDamageTaken_Implementation(AActor* DamageInstigator, float DamageReceived) override;
 	virtual float TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser) override;
 
 	void SetPlayerName();
 
-	UFUNCTION(BlueprintPure)
-	FTransform GetRandomSpawnPoint() const;
+	UFUNCTION()
+	void OnGameStart();
 
+	UFUNCTION()
+	void OnGameEnd(ACHCharacterBase* Winner);
+	
+	void ShowTableScore();
+	void HideTableScore();
+	
 public:
 	// Called every frame
 	virtual void Tick(float DeltaTime) override;
@@ -175,7 +233,13 @@ public:
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 
 	UFUNCTION(BlueprintPure)
+	UCHHUDWidget* GetHUD() const { return HUD; }
+
+	UFUNCTION(BlueprintPure)
 	UCHStatsComponent* GetStatsComponent() const { return StatsComponent; }
+
+	UFUNCTION(BlueprintPure)
+	UCHDACharacterConfig* GetCharacterConfig() const { return CharacterConfig; }
 
 	UFUNCTION(BlueprintPure)
 	bool GetIsDead() const { return bIsDead; }
@@ -186,6 +250,7 @@ public:
 	UFUNCTION(BlueprintPure)
 	int32 GetPoints() const { return Points; }
 
+	UFUNCTION(BlueprintCallable)
 	void AddSinglePoint();
 
 	UFUNCTION(BlueprintPure)
@@ -194,8 +259,13 @@ public:
 	void AddAmmo(const FGameplayTag& AmmoType, int32 Amount);
 	void RemoveAmmo(const FGameplayTag& AmmoType, int32 Amount = 1);
 	int32 GetCurrentAmmo(const FGameplayTag& AmmoType);
+	int32 GetWeaponCurrentAmmo(const FGameplayTag& WeaponTag);
+	void UpdateWeaponAmmo(const FGameplayTag& WeaponTag, int32 NewValue);
 
 	void FillAmmoInventory();
+
+	UFUNCTION(BlueprintPure)
+	FText GetPlayerName() const { return PlayerName; }
 
 	/// --------------- ANIM USEFUL FUNCTIONS -------------- ///
 	UFUNCTION(BlueprintPure)

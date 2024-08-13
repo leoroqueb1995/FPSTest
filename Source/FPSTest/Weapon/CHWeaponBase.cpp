@@ -18,7 +18,7 @@ ACHWeaponBase::ACHWeaponBase()
 {
 	// Set this actor to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = true;
-
+	
 	WeaponSK = CreateDefaultSubobject<USkeletalMeshComponent>(FName(TEXT("WeaponSK")));
 	SetRootComponent(WeaponSK);
 
@@ -37,13 +37,12 @@ void ACHWeaponBase::InitWeaponData()
 {
 	CHECK_POINTER(WeaponComponent)
 	CHECK_VALID_TAG(WeaponTag)
-
-
+	
 	WeaponComponent->SetWeapon(WeaponTag);
 
 	CHECK_POINTER(WeaponComponent->GetWeaponSK())
 	WeaponSK->SetSkeletalMesh(WeaponComponent->GetWeaponSK());
-
+	
 	BulletsLeft = WeaponComponent->GetMaxBulletsOnWeapon();
 }
 
@@ -75,7 +74,13 @@ void ACHWeaponBase::ApplyDamageToActor_Implementation(AActor* TargetActor)
 		return;
 	}
 
+	OnHit.Broadcast(false);
 	UGameplayStatics::ApplyDamage(CastedActor, BulletDamage, GetInstigatorController(), WeaponOwner, UDamageType::StaticClass());
+}
+
+void ACHWeaponBase::SetWeaponBullets(int32 BulletsAmount)
+{
+	BulletsLeft = FMath::Clamp(BulletsAmount, 0, GetWeaponComponent()->GetMaxBulletsOnWeapon());
 }
 
 void ACHWeaponBase::Shoot()
@@ -88,6 +93,7 @@ void ACHWeaponBase::Shoot()
 
 	SpawnShootVFX();
 	ShootBullet();
+	OnWeaponAmmoModified.Broadcast(GetRemainingBullets());
 }
 
 void ACHWeaponBase::SpawnShootVFX()
@@ -96,7 +102,7 @@ void ACHWeaponBase::SpawnShootVFX()
 	CHECK_POINTER(GetWorld())
 	CHECK_POINTER(WeaponSK)
 	CHECK_POINTER_WITH_TEXT_VOID(WeaponComponent->GetWeaponData().ShootVFX, TEXT("No ShootVFX Data on DT_Weapons"))
-	CHECK_POINTER_WITH_TEXT_VOID(WeaponComponent->GetWeaponData().TracerVFX, TEXT("No TracerVFX data on DT_Weapons"))
+	//CHECK_POINTER_WITH_TEXT_VOID(WeaponComponent->GetWeaponData().TracerVFX, TEXT("No TracerVFX data on DT_Weapons"))
 
 	UParticleSystem* VFX = WeaponComponent->GetWeaponData().ShootVFX;
 	//UParticleSystem* TracerVFX = WeaponComponent->GetWeaponData().TracerVFX;
@@ -111,42 +117,70 @@ void ACHWeaponBase::SpawnShootVFX()
 
 void ACHWeaponBase::ShootBullet()
 {
+	if(GetRemainingBullets() == 0)
+	{
+		return;
+	}
+	CHECK_POINTER(WeaponOwner)
+	CHECK_POINTER(GEngine)
+	
 	FVector SocketLocation = WeaponSK->GetSocketLocation(CHWeaponHelpers::BulletSocket);
 	FRotator SocketRotation = WeaponSK->GetSocketRotation(CHWeaponHelpers::BulletSocket);
 
 	APlayerController* PlayerController = UGameplayStatics::GetPlayerController(this, 0);
 	CHECK_POINTER(PlayerController)
+	
+	FVector CameraLocation;
+	FRotator CameraRotation;
+	PlayerController->GetPlayerViewPoint(CameraLocation, CameraRotation);
+	
+	FVector AimDirection = CameraRotation.Vector();
+	FVector TraceStart = CameraLocation;
+	FVector TraceEnd = TraceStart + (AimDirection * 10000.0f); 
 
-	int32 ViewportSizeX, ViewportSizeY;
-	PlayerController->GetViewportSize(ViewportSizeX, ViewportSizeY);
-
-	const FVector2D ScreenCenter(ViewportSizeX * .5f, ViewportSizeY * .5f); // More efficient to * 0.5 than /2
-
-	FVector WorldLocation, WorldDirection;
-	PlayerController->DeprojectScreenPositionToWorld(ScreenCenter.X, ScreenCenter.Y, WorldLocation, WorldDirection);
-
-	FVector EndLocation = WorldLocation + (WorldDirection * 10000.f);
-	FHitResult HitResult;
+	// Make a linetrace from camera to get any hit
+	FHitResult CameraHitResult;
 	FCollisionQueryParams Params;
-	Params.AddIgnoredActor(this);
+	Params.AddIgnoredActor(this); 
 
-	// Make bullet raycast
-	bool bHit = GetWorld()->LineTraceSingleByChannel(
-		HitResult,
-		SocketLocation,
-		EndLocation,
-		ECC_Pawn,
-		Params
-	);
-
-	// One bullet was shot
-	TakeBulletFromMagazine();
-
-	// TODO: Change this to hit any surface
-	if (bHit)
+	bool bCameraHit = GetWorld()->LineTraceSingleByChannel(CameraHitResult, TraceStart, TraceEnd, ECC_Visibility, Params);
+	
+	if (bCameraHit)
 	{
-		CHECK_POINTER(HitResult.GetActor())
-		ACHCharacterBase* Player = Cast<ACHCharacterBase>(HitResult.GetActor()); //UGameplayStatics::GetPlayerCharacter(this,0));
+		TraceEnd = CameraHitResult.Location;
+	}
+	
+	FVector AdjustedDirection = (TraceEnd - SocketLocation).GetSafeNormal();
+	FVector AdjustedTraceEnd = SocketLocation + (AdjustedDirection * (bCameraHit ? CameraHitResult.Distance : 10000.0f));
+
+	FHitResult WeaponHitResult;
+	bool bWeaponHit = GetWorld()->LineTraceSingleByChannel(WeaponHitResult, SocketLocation, AdjustedTraceEnd, ECC_Visibility, Params);
+
+	// Dibujar la línea de depuración
+	FColor LineColor = bWeaponHit ? FColor::Green : FColor::Red;
+	DrawDebugLine(GetWorld(), SocketLocation, AdjustedTraceEnd, LineColor, false, 2.0f, 0, 1.0f);
+
+	if (bWeaponHit)
+	{
+		DrawDebugPoint(GetWorld(), WeaponHitResult.Location, 10.0f, FColor::Yellow, false, 2.0f);
+		UE_LOG(LogTemp, Warning, TEXT("Hit: %s"), *WeaponHitResult.GetActor()->GetName());
+	}
+	
+	// One bullet was shot
+	int32 BulletsShot = GetWeaponComponent()->GetAmmoSpentOnShot();
+	if (BulletsShot == INDEX_NONE)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("%s: Weapon data is not valid or there is some missing info."), *FString(__FUNCTION__))
+		BulletsShot = 1;
+	}
+	
+	TakeBulletFromMagazine(BulletsShot);
+	WeaponOwner->UpdateWeaponAmmo(WeaponTag, BulletsLeft);
+	
+	if (bWeaponHit)
+	{
+		CHECK_POINTER(WeaponHitResult.GetActor())
+		ACHCharacterBase* Player = Cast<ACHCharacterBase>(WeaponHitResult.GetActor());
 
 		if (!Player)
 		{
@@ -158,7 +192,7 @@ void ACHWeaponBase::ShootBullet()
 		CHECK_POINTER(WeaponComponent->GetWeaponData().HitVFX)
 
 		UParticleSystem* VFX = WeaponComponent->GetWeaponData().HitVFX;
-		UGameplayStatics::SpawnEmitterAtLocation(GetWorld(), VFX, HitResult.ImpactPoint, FRotator::ZeroRotator, true, EPSCPoolMethod::AutoRelease);
+		UGameplayStatics::SpawnEmitterAtLocation(GetWorld(), VFX, WeaponHitResult.ImpactPoint, FRotator::ZeroRotator, true, EPSCPoolMethod::AutoRelease);
 	}
 }
 
@@ -174,26 +208,63 @@ void ACHWeaponBase::TakeBulletFromMagazine(int32 NumberOfBullets)
 
 bool ACHWeaponBase::Reload(int32 AmmoQuantity, bool bConsumeAmmo)
 {
-	CHECK_POINTER(WeaponComponent, false)
+	CHECK_POINTER(GetWeaponComponent(), false)
+	CHECK_POINTER(WeaponOwner, false)
+	
+	if (!GetWeaponComponent()->GetWeaponData().IsValid())
+	{
+		return false;
+	}
+	
 	const int32 AmmoNeeded = WeaponComponent->GetMaxBulletsOnWeapon() - BulletsLeft;
 	const int32 Remain = AmmoQuantity - AmmoNeeded;
 
-	if (Remain < 0)
+	if(AmmoNeeded == 0)
 	{
-		BulletsLeft += AmmoQuantity;
-		if (bConsumeAmmo)
+		return true;
+	}
+	
+	if (GetWeaponComponent()->GetWeaponData().ReloadType == ECHReloadType::MAGAZINE)
+	{
+		if (Remain < 0)
 		{
-			WeaponOwner->RemoveAmmo(WeaponTag, AmmoQuantity);
+			BulletsLeft += AmmoQuantity;
+			if (bConsumeAmmo)
+			{
+				WeaponOwner->RemoveAmmo(WeaponTag, AmmoQuantity);
+			}
 		}
+		else
+		{
+			BulletsLeft += AmmoNeeded;
+			if (bConsumeAmmo)
+			{
+				WeaponOwner->RemoveAmmo(WeaponTag, AmmoNeeded);
+			}
+		}
+		WeaponOwner->UpdateWeaponAmmo(WeaponTag, BulletsLeft);
+		OnWeaponAmmoModified.Broadcast(GetRemainingBullets());
+		OnWeaponReloaded.Broadcast(WeaponOwner->GetCurrentAmmo(WeaponTag));
+		return true;
+	}
+
+	if (AmmoQuantity < 1)
+	{
+		return false;
+	}
+	
+	BulletsLeft++;
+	if(bConsumeAmmo)
+	{
+		WeaponOwner->RemoveAmmo(WeaponTag,1);
 	}
 	else
 	{
-		BulletsLeft += AmmoNeeded;
-		if (bConsumeAmmo)
-		{
-			WeaponOwner->RemoveAmmo(WeaponTag, AmmoNeeded);
-		}
+		// it will only enter on this branch if cheating or after picking up ammo refill
+		BulletsLeft = WeaponComponent->GetMaxBulletsOnWeapon();
 	}
-
+	WeaponOwner->UpdateWeaponAmmo(WeaponTag, BulletsLeft);
+	OnWeaponAmmoModified.Broadcast(GetRemainingBullets());
+	OnWeaponReloaded.Broadcast(WeaponOwner->GetCurrentAmmo(WeaponTag));
 	return true;
 }
